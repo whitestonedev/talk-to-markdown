@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interface YouTube Summarizer</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <style>
+    body { padding-top: 20px; }
+    /* Container da timeline */
+    #timeline {
+      margin-top: 20px;
+      height: 300px;
+      overflow-y: auto;
+      border: 1px solid #ced4da;
+      padding: 10px;
+      background-color: #f8f9fa;
+      font-family: monospace;
+    }
+    /* Estilo para cada card da timeline */
+    .timeline-card {
+      position: relative;
+      margin-bottom: 15px;
+      border: 1px solid #ced4da;
+      border-radius: 5px;
+      padding: 15px;
+      background-color: white;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+    }
+    .timeline-card-stage { font-weight: bold; display: block; margin-bottom: 5px; }
+    .timeline-card-log { display: block; margin-bottom: 5px; }
+    .timeline-time { font-size: 0.8em; color: #777; display: block; text-align: right; }
+    /* Botão de copiar dentro do card */
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 0.8em;
+    }
+    /* Área exclusiva para o transcription result */
+    #transcription-result {
+      margin-top: 30px;
+      display: none;
+    }
+    #transcription-result-container {
+      position: relative;
+      padding: 15px;
+      border: 1px solid #28a745;
+      border-radius: 5px;
+      background-color: #d4edda;
+      color: #007bff;
+      font-family: sans-serif;
+      white-space: pre-line;
+    }
+    #transcription-result-container .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Formulário -->
+    <div class="jumbotron">
+      <h1 class="display-4">YouTube Summarizer</h1>
+      <p class="lead">Insira o ID de um vídeo do YouTube e um prompt customizado para resumir o vídeo.</p>
+      <hr class="my-4">
+      <form id="summarizer-form">
+        <div class="form-group">
+          <label for="video_id">YouTube Video ID:</label>
+          <input type="text" class="form-control" id="video_id" name="video_id" required>
+        </div>
+        <div class="form-group">
+          <label for="custom_prompt">Custom Prompt (Opcional):</label>
+          <textarea class="form-control" id="custom_prompt" name="custom_prompt" rows="3"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" id="summarize-button">
+          Summarize
+          <span id="loading-text" style="display: none;">Processando...</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Timeline com os cards de atualização -->
+    <div id="timeline">
+      <h2>Process Timeline</h2>
+      <div id="timeline-container"></div>
+    </div>
+
+    <!-- Elemento exclusivo para o transcription result -->
+    <div id="transcription-result">
+      <h2>Transcription Result</h2>
+      <div id="transcription-result-container"></div>
+    </div>
+  </div>
+
+  <!-- Cliente Socket.IO e jQuery -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script>
+    var socket = io();
+
+    $(document).ready(function() {
+      $("#summarizer-form").on("submit", function(e) {
+        e.preventDefault();
+        $("#summarize-button").prop("disabled", true);
+        $("#loading-text").show();
+        $("#timeline-container").empty();
+        $("#transcription-result-container").empty();
+        $("#transcription-result").hide();
+
+        var videoId = $("#video_id").val();
+        var customPrompt = $("#custom_prompt").val();
+
+        // Inicia o processamento via Socket.IO
+        socket.emit("start_process", { video_id: videoId, custom_prompt: customPrompt });
+      });
+
+      // Atualiza a timeline com cada evento
+      socket.on("timeline_update", function(item) {
+        updateTimeline(item);
+      });
+
+      // Recebe o transcription result final
+      socket.on("article", function(data) {
+        updateTimeline({
+          stage: "Resumo Finalizado",
+          log: "Processo concluído com sucesso.",
+          status: "COMPLETED"
+        });
+        // Exibe o resultado final em seu próprio elemento com botão de copiar
+        $("#transcription-result-container").html(`
+          <div>
+            ${data.article}
+            <button class="btn btn-sm btn-secondary copy-btn" onclick="copyText('transcription-result-container')">Copiar Conteúdo</button>
+          </div>
+        `);
+        $("#transcription-result").show();
+        $("#summarize-button").prop("disabled", false);
+        $("#loading-text").hide();
+      });
+    });
+
+    // Adiciona um novo card na timeline com o botão de copiar
+    function updateTimeline(item) {
+      var cardHTML = `
+        <div class="timeline-card">
+          <span class="timeline-card-stage">${item.stage}</span>
+          <span class="timeline-card-log">${item.log}</span>
+          <span class="timeline-time">${getCurrentTime()}</span>
+          <button class="btn btn-sm btn-secondary copy-btn" onclick="copyCardContent(this)">Copiar Conteúdo</button>
+        </div>`;
+      $("#timeline-container").prepend(cardHTML);
+      $("#timeline-container").scrollTop(0);
+    }
+
+    // Copia o conteúdo do card clicado (exclui o texto do botão)
+    function copyCardContent(button) {
+      var card = $(button).closest('.timeline-card');
+      var text = card.text().replace("Copiar Conteúdo", "").trim();
+      copyToClipboard(text);
+    }
+
+    // Copia o texto de um elemento identificado por id
+    function copyText(elementId) {
+      var text = document.getElementById(elementId).innerText;
+      copyToClipboard(text);
+    }
+
+    // Função auxiliar para copiar texto para a área de transferência
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(function() {
+        alert("Conteúdo copiado!");
+      }, function(err) {
+        alert("Erro ao copiar: " + err);
+      });
+    }
+
+    // Retorna a hora atual formatada
+    function getCurrentTime() {
+      var now = new Date();
+      var hours = String(now.getHours()).padStart(2, '0');
+      var minutes = String(now.getMinutes()).padStart(2, '0');
+      var seconds = String(now.getSeconds()).padStart(2, '0');
+      return hours + ":" + minutes + ":" + seconds;
+    }
+  </script>
+</body>
+</html>

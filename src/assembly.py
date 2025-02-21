@@ -1,3 +1,5 @@
+import os
+
 import assemblyai as aai
 
 from tqdm import tqdm
@@ -11,7 +13,6 @@ def assemblyai_transcribe(
     audio_filepath: str = None, transcription_id: str = None
 ):
     """Transcreve arquivo de áudio usando AssemblyAI com diarização, reutiliza transcrições existentes pelo ID."""
-
     transcription = None
     if transcription_id:
         print(
@@ -38,14 +39,16 @@ def assemblyai_transcribe(
             speaker_labels=True, language_code="pt"
         )
         try:
-            # transcript = transcriber.transcribe(audio_filepath, config)
+            transcript = transcriber.transcribe(audio_filepath, config)
             if transcript and transcript.status == "completed":
                 transcription = transcript
                 print(
                     f"Nova transcrição concluída com sucesso, ID: {transcript.id}"
                 )
-                # salva o ID da transcrição para reutilização
-                with open("transcription_id.txt", "w") as f:
+                transcription_id_file_path = os.path.join(
+                    os.path.dirname(audio_filepath), "transcription_id.txt"
+                )
+                with open(transcription_id_file_path, "w") as f:
                     f.write(transcription.id)
                 return transcription
             else:
